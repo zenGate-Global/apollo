@@ -553,10 +553,10 @@ func (b *Apollo) scriptDataHash() (*serialization.ScriptDataHash, error) {
 		if len(PV1Scripts) > 0 {
 			usedCms[serialization.CustomBytes{Value: "00"}] = PlutusData.PLUTUSV1COSTMODEL
 		}
-		if len(PV2Scripts) > 0 || len(b.referenceInputs) > 0 {
+		if len(PV2Scripts) > 0 {
 			usedCms[1] = PlutusData.PLUTUSV2COSTMODEL
 		}
-		if len(PV3Scripts) > 0 {
+		if len(PV3Scripts) > 0 || len(b.referenceInputs) > 0 {
 			usedCms[2] = PlutusData.PLUTUSV3COSTMODEL
 		}
 
