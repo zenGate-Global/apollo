@@ -1,6 +1,8 @@
 package apollo
 
 import (
+	"encoding/hex"
+
 	"github.com/Salvionied/apollo/serialization"
 	"github.com/Salvionied/apollo/serialization/Address"
 	"github.com/Salvionied/apollo/serialization/AssetName"
@@ -54,6 +56,20 @@ func NewUnit(policyId string, name string, quantity int) Unit {
 	return Unit{
 		PolicyId: policyId,
 		Name:     name,
+		Quantity: quantity,
+	}
+}
+
+func NewUnitFromHexString(policyId string, name string, quantity int) Unit {
+	decoded, err := hex.DecodeString(name)
+
+	if err != nil {
+		return Unit{}
+	}
+
+	return Unit{
+		PolicyId: policyId,
+		Name:     string(decoded),
 		Quantity: quantity,
 	}
 }
