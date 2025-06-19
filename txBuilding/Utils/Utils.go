@@ -73,6 +73,9 @@ func Fee(context Base.ChainContext, txSize int, steps int64, mem int64, refInput
 			if utxo == nil {
 				continue
 			}
+			if utxo.Output.GetScriptRef() == nil {
+				continue
+			}
 			refInputsSize += utxo.Output.GetScriptRef().Len()
 		}
 
