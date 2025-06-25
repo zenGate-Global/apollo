@@ -81,21 +81,26 @@ func Fee(context Base.ChainContext, txSize int, steps int64, mem int64, refInput
 
 	}
 	mult := 1.2
-	baseFee := 15.0
+	baseRefFee := 15.0
 	Range := 25600.0
-	for refInputsSize > 0 {
-		cur := math.Min(Range, float64(refInputsSize))
-		curFee := cur * baseFee
+	tempRefInputsSize := float64(refInputsSize)
+
+	for tempRefInputsSize > 0 {
+		cur := math.Min(Range, tempRefInputsSize)
+		curFee := cur * baseRefFee
 		addedFee += int(curFee)
-		refInputsSize -= int(cur)
-		baseFee = baseFee * mult
+		tempRefInputsSize -= cur
+		baseRefFee = baseRefFee * mult
 	}
 
-	fee := int64((txSize)*pps.MinFeeCoefficient+
-		pps.MinFeeConstant+
-		int(float32(steps)*pps.PriceStep)+
-		int(float32(mem)*pps.PriceMem)) + int64(addedFee)
-	return fee, nil
+	scriptExecutionFee := math.Ceil((float64(mem) * float64(pps.PriceMem)) + (float64(steps) * float64(pps.PriceStep)))
+
+	totalFee := int64(txSize*pps.MinFeeCoefficient) +
+		int64(pps.MinFeeConstant) +
+		int64(scriptExecutionFee) +
+		int64(addedFee)
+
+	return totalFee, nil
 }
 
 func Copy[T serialization.Clonable[T]](input []T) []T {
