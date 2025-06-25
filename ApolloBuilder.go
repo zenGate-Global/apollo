@@ -1014,8 +1014,8 @@ func (b *Apollo) updateExUnits() (*Apollo, error) {
 			key := fmt.Sprintf("%s:%d", Redeemer.RdeemerTagNames[redeemer.Tag], redeemer.Index)
 			if _, ok := estimated_execution_units[key]; ok {
 				redeemer.ExUnits = estimated_execution_units[key]
-				redeemer.ExUnits.Mem = int64(float32(redeemer.ExUnits.Mem) * 1.2)
-				redeemer.ExUnits.Steps = int64(float32(redeemer.ExUnits.Steps) * 1.2)
+				redeemer.ExUnits.Mem = int64(float32(redeemer.ExUnits.Mem))
+				redeemer.ExUnits.Steps = int64(float32(redeemer.ExUnits.Steps))
 				b.redeemersToUTxO[k] = redeemer
 			}
 		}
@@ -1023,8 +1023,8 @@ func (b *Apollo) updateExUnits() (*Apollo, error) {
 			key := fmt.Sprintf("%s:%d", Redeemer.RdeemerTagNames[redeemer.Tag], redeemer.Index)
 			if _, ok := estimated_execution_units[key]; ok {
 				redeemer.ExUnits = estimated_execution_units[key]
-				redeemer.ExUnits.Mem = int64(float32(redeemer.ExUnits.Mem) * 1.2)
-				redeemer.ExUnits.Steps = int64(float32(redeemer.ExUnits.Steps) * 1.2)
+				redeemer.ExUnits.Mem = int64(float32(redeemer.ExUnits.Mem))
+				redeemer.ExUnits.Steps = int64(float32(redeemer.ExUnits.Steps))
 				b.stakeRedeemers[k] = redeemer
 			}
 		}
@@ -1032,8 +1032,8 @@ func (b *Apollo) updateExUnits() (*Apollo, error) {
 			key := fmt.Sprintf("%s:%d", Redeemer.RdeemerTagNames[redeemer.Tag], redeemer.Index)
 			if _, ok := estimated_execution_units[key]; ok {
 				redeemer.ExUnits = estimated_execution_units[key]
-				redeemer.ExUnits.Mem = int64(float32(redeemer.ExUnits.Mem) * 1.2)
-				redeemer.ExUnits.Steps = int64(float32(redeemer.ExUnits.Steps) * 1.2)
+				redeemer.ExUnits.Mem = int64(float32(redeemer.ExUnits.Mem))
+				redeemer.ExUnits.Steps = int64(float32(redeemer.ExUnits.Steps))
 				b.mintRedeemers[k] = redeemer
 			}
 		}
