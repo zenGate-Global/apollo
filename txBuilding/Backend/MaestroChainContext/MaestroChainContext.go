@@ -412,7 +412,7 @@ type ExecutionResult struct {
 	Result EvalResult `json:"result"`
 }
 
-func (mcc *MaestroChainContext) EvaluateTx(tx []byte) (map[string]Redeemer.ExecutionUnits, error) {
+func (mcc *MaestroChainContext) EvaluateTx(tx []byte, _ []UTxO.UTxO) (map[string]Redeemer.ExecutionUnits, error) {
 	final_result := make(map[string]Redeemer.ExecutionUnits)
 	encodedTx := hex.EncodeToString(tx)
 	fmt.Println(encodedTx)

@@ -552,7 +552,7 @@ type ExecutionResult struct {
 	Result EvalResult `json:"result"`
 }
 
-func (bfc *BlockFrostChainContext) EvaluateTx(tx []byte) (map[string]Redeemer.ExecutionUnits, error) {
+func (bfc *BlockFrostChainContext) EvaluateTx(tx []byte, _ []UTxO.UTxO) (map[string]Redeemer.ExecutionUnits, error) {
 	encoded := hex.EncodeToString(tx)
 	req, _ := http.NewRequest("POST", fmt.Sprintf("%s/utils/txs/evaluate", bfc._baseUrl), strings.NewReader(encoded))
 	if bfc._projectId != "" {

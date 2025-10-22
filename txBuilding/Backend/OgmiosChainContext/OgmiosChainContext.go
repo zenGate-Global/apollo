@@ -640,7 +640,7 @@ func (occ *OgmiosChainContext) SubmitTx(
 
 }
 
-func (occ *OgmiosChainContext) EvaluateTx(tx []uint8) (map[string]Redeemer.ExecutionUnits, error) {
+func (occ *OgmiosChainContext) EvaluateTx(tx []uint8, _ []UTxO.UTxO) (map[string]Redeemer.ExecutionUnits, error) {
 	final_result := make(map[string]Redeemer.ExecutionUnits)
 	ctx := context.Background()
 	eval, err := occ.ogmigo.EvaluateTx(ctx, hex.EncodeToString(tx))

@@ -186,7 +186,7 @@ type ChainContext interface {
 	LastBlockSlot() (int, error)
 	Utxos(address Address.Address) ([]UTxO.UTxO, error)
 	SubmitTx(Transaction.Transaction) (serialization.TransactionId, error)
-	EvaluateTx([]uint8) (map[string]Redeemer.ExecutionUnits, error)
+	EvaluateTx([]uint8, []UTxO.UTxO) (map[string]Redeemer.ExecutionUnits, error)
 	GetUtxoFromRef(txHash string, txIndex int) (*UTxO.UTxO, error)
 	GetContractCbor(scriptHash string) (string, error)
 }

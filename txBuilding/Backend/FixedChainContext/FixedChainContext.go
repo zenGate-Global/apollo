@@ -130,7 +130,7 @@ func (f FixedChainContext) SubmitTx(tx Transaction.Transaction) (serialization.T
 	return serialization.TransactionId{}, nil
 }
 
-func (f FixedChainContext) EvaluateTx(tx []uint8) (map[string]Redeemer.ExecutionUnits, error) {
+func (f FixedChainContext) EvaluateTx(tx []uint8, _ []UTxO.UTxO) (map[string]Redeemer.ExecutionUnits, error) {
 	return map[string]Redeemer.ExecutionUnits{"spend:0": {Mem: 399882, Steps: 175940720}}, nil
 }
 

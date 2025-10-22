@@ -993,7 +993,8 @@ func (b *Apollo) estimateExunits() (map[string]Redeemer.ExecutionUnits, error) {
 	}
 	//updated_b = updated_b.fakeWitness()
 	tx_cbor, _ := cbor.Marshal(updated_b.tx)
-	return b.Context.EvaluateTx(tx_cbor)
+	inputs := append([]UTxO.UTxO{}, updated_b.preselectedUtxos...)
+	return b.Context.EvaluateTx(tx_cbor, inputs)
 }
 
 /*
@@ -2085,7 +2086,8 @@ func (b *Apollo) estimateExunitsExact(fee int) (map[string]Redeemer.ExecutionUni
 	updated_b, _ := cloned_b.CompleteExact(fee)
 	//updated_b = updated_b.fakeWitness()
 	tx_cbor, _ := cbor.Marshal(updated_b.tx)
-	return b.Context.EvaluateTx(tx_cbor)
+	inputs := append([]UTxO.UTxO{}, updated_b.preselectedUtxos...)
+	return b.Context.EvaluateTx(tx_cbor, inputs)
 }
 
 func (b *Apollo) updateExUnitsExact(fee int) (*Apollo, error) {
