@@ -683,8 +683,9 @@ Returns:
 */
 
 func (b *Apollo) buildTxBody() (TransactionBody.TransactionBody, error) {
-	inputs := make([]TransactionInput.TransactionInput, 0)
-	for _, utxo := range b.preselectedUtxos {
+	sortedInputs := SortInputs(b.preselectedUtxos)
+	inputs := make([]TransactionInput.TransactionInput, 0, len(sortedInputs))
+	for _, utxo := range sortedInputs {
 		inputs = append(inputs, utxo.Input)
 	}
 	collaterals := make([]TransactionInput.TransactionInput, 0)
