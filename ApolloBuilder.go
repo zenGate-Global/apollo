@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"sort"
 	"strconv"
 
 	"github.com/Salvionied/apollo/apollotypes"
@@ -843,10 +844,47 @@ func (b *Apollo) setRedeemerIndexes() *Apollo {
 			redeem.Index = i
 			b.redeemersToUTxO[key] = redeem
 		} else if ok && val.Tag == Redeemer.MINT {
-			// TODO: IMPLEMENT FOR MINTS
 			continue
 		}
 	}
+
+	if len(b.mintRedeemers) > 0 {
+		mintPolicies := make([]string, 0)
+		seenPolicies := make(map[string]struct{})
+		for policy, assets := range b.getMints() {
+			hasQuantity := false
+			for _, quantity := range assets {
+				if quantity != 0 {
+					hasQuantity = true
+					break
+				}
+			}
+			if !hasQuantity {
+				continue
+			}
+			policyID := policy.String()
+			if _, seen := seenPolicies[policyID]; !seen {
+				seenPolicies[policyID] = struct{}{}
+				mintPolicies = append(mintPolicies, policyID)
+			}
+		}
+		if len(mintPolicies) == 0 {
+			for policyID := range b.mintRedeemers {
+				if _, seen := seenPolicies[policyID]; !seen {
+					seenPolicies[policyID] = struct{}{}
+					mintPolicies = append(mintPolicies, policyID)
+				}
+			}
+		}
+		sort.Strings(mintPolicies)
+		for idx, policyID := range mintPolicies {
+			if redeemer, ok := b.mintRedeemers[policyID]; ok {
+				redeemer.Index = idx
+				b.mintRedeemers[policyID] = redeemer
+			}
+		}
+	}
+
 	return b
 }
 
