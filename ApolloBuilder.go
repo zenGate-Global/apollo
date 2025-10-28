@@ -888,6 +888,19 @@ func (b *Apollo) setRedeemerIndexes() *Apollo {
 	return b
 }
 
+func (b *Apollo) rebuildRedeemers() {
+	b.redeemers = b.redeemers[:0]
+	for _, redeemer := range b.redeemersToUTxO {
+		b.redeemers = append(b.redeemers, redeemer)
+	}
+	for _, redeemer := range b.stakeRedeemers {
+		b.redeemers = append(b.redeemers, redeemer)
+	}
+	for _, redeemer := range b.mintRedeemers {
+		b.redeemers = append(b.redeemers, redeemer)
+	}
+}
+
 /*
 *
 
@@ -1077,27 +1090,9 @@ func (b *Apollo) updateExUnits() (*Apollo, error) {
 				b.mintRedeemers[k] = redeemer
 			}
 		}
-		for _, redeemer := range b.redeemersToUTxO {
-			b.redeemers = append(b.redeemers, redeemer)
-		}
-		for _, redeemer := range b.stakeRedeemers {
-			b.redeemers = append(b.redeemers, redeemer)
-		}
-		for _, redeemer := range b.mintRedeemers {
-			b.redeemers = append(b.redeemers, redeemer)
-
-		}
+		b.rebuildRedeemers()
 	} else {
-		for _, redeemer := range b.redeemersToUTxO {
-			b.redeemers = append(b.redeemers, redeemer)
-		}
-		for _, redeemer := range b.stakeRedeemers {
-			b.redeemers = append(b.redeemers, redeemer)
-		}
-		for _, redeemer := range b.mintRedeemers {
-			b.redeemers = append(b.redeemers, redeemer)
-		}
-
+		b.rebuildRedeemers()
 	}
 	return b, nil
 }
@@ -1247,6 +1242,8 @@ func (b *Apollo) Complete() (*Apollo, error) {
 	if err != nil {
 		return nil, err
 	}
+	b = b.setRedeemerIndexes()
+	b.rebuildRedeemers()
 	//FINALIZE TX
 	body, err := b.buildTxBody()
 	if err != nil {
@@ -2156,27 +2153,9 @@ func (b *Apollo) updateExUnitsExact(fee int) (*Apollo, error) {
 				b.mintRedeemers[k] = redeemer
 			}
 		}
-		for _, redeemer := range b.redeemersToUTxO {
-			b.redeemers = append(b.redeemers, redeemer)
-		}
-		for _, redeemer := range b.stakeRedeemers {
-			b.redeemers = append(b.redeemers, redeemer)
-		}
-		for _, redeemer := range b.mintRedeemers {
-			b.redeemers = append(b.redeemers, redeemer)
-
-		}
+		b.rebuildRedeemers()
 	} else {
-		for _, redeemer := range b.redeemersToUTxO {
-			b.redeemers = append(b.redeemers, redeemer)
-		}
-		for _, redeemer := range b.stakeRedeemers {
-			b.redeemers = append(b.redeemers, redeemer)
-		}
-		for _, redeemer := range b.mintRedeemers {
-			b.redeemers = append(b.redeemers, redeemer)
-		}
-
+		b.rebuildRedeemers()
 	}
 	return b, nil
 }
