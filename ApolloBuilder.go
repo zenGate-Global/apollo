@@ -550,14 +550,35 @@ func (b *Apollo) scriptDataHash() (*serialization.ScriptDataHash, error) {
 	datums := b.datums
 	usedCms := map[any]cbor.Marshaler{}
 	if len(redeemers) > 0 {
+		// Prefer the network cost models from the protocol parameters so the
+		// language views match the current on-chain values; fall back to the
+		// hardcoded constants when the chain context can't supply them. Using
+		// stale hardcoded cost models produces a script_data_hash the node
+		// rejects with PPViewHashesDontMatch.
+		var costModelsRaw map[string][]int64
+		if pp, ppErr := b.Context.GetProtocolParams(); ppErr == nil {
+			costModelsRaw = pp.CostModelsRaw
+		}
 		if len(PV1Scripts) > 0 {
-			usedCms[serialization.CustomBytes{Value: "00"}] = PlutusData.PLUTUSV1COSTMODEL
+			if raw := costModelsRaw["PlutusV1"]; len(raw) > 0 {
+				usedCms[serialization.CustomBytes{Value: "00"}] = PlutusData.CostModelV1Raw(raw)
+			} else {
+				usedCms[serialization.CustomBytes{Value: "00"}] = PlutusData.PLUTUSV1COSTMODEL
+			}
 		}
 		if len(PV2Scripts) > 0 {
-			usedCms[1] = PlutusData.PLUTUSV2COSTMODEL
+			if raw := costModelsRaw["PlutusV2"]; len(raw) > 0 {
+				usedCms[1] = PlutusData.NewCostModelArray(raw)
+			} else {
+				usedCms[1] = PlutusData.PLUTUSV2COSTMODEL
+			}
 		}
 		if len(PV3Scripts) > 0 || len(b.referenceInputs) > 0 {
-			usedCms[2] = PlutusData.PLUTUSV3COSTMODEL
+			if raw := costModelsRaw["PlutusV3"]; len(raw) > 0 {
+				usedCms[2] = PlutusData.NewCostModelArray(raw)
+			} else {
+				usedCms[2] = PlutusData.PLUTUSV3COSTMODEL
+			}
 		}
 
 	}
