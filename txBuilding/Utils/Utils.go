@@ -88,10 +88,10 @@ func Fee(context Base.ChainContext, txSize int, steps int64, mem int64, refInput
 		baseFee = baseFee * mult
 	}
 
-	fee := int64((txSize)*pps.MinFeeCoefficient+
-		pps.MinFeeConstant+
-		int(float32(steps)*pps.PriceStep)+
-		int(float32(mem)*pps.PriceMem)) + int64(addedFee)
+	fee := int64(txSize)*pps.MinFeeCoefficient +
+		pps.MinFeeConstant +
+		int64(float32(steps)*pps.PriceStep) +
+		int64(float32(mem)*pps.PriceMem) + int64(addedFee)
 	return fee, nil
 }
 

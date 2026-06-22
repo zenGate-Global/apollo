@@ -441,8 +441,8 @@ func (occ *OgmiosChainContext) LatestEpochParams() Base.ProtocolParameters {
 	}
 
 	return Base.ProtocolParameters{
-		MinFeeConstant:     int(ogmiosParams.MinFeeConstant.Lovelace),
-		MinFeeCoefficient:  int(ogmiosParams.MinFeeCoefficient),
+		MinFeeConstant:     int64(ogmiosParams.MinFeeConstant.Lovelace),
+		MinFeeCoefficient:  int64(ogmiosParams.MinFeeCoefficient),
 		MaxBlockSize:       int(ogmiosParams.MaxBlockSize.Bytes),
 		MaxTxSize:          int(ogmiosParams.MaxTxSize.Bytes),
 		MaxBlockHeaderSize: int(ogmiosParams.MaxBlockHeaderSize.Bytes),
@@ -484,7 +484,7 @@ func (occ *OgmiosChainContext) LatestEpochParams() Base.ProtocolParameters {
 		MinFeeReferenceScriptsRange:      int(ogmiosParams.MinFeeReferenceScripts.Range),
 		MinFeeReferenceScriptsBase:       int(ogmiosParams.MinFeeReferenceScripts.Base),
 		MinFeeReferenceScriptsMultiplier: int(ogmiosParams.MinFeeReferenceScripts.Multiplier),
-		CostModels:                       ogmiosParams.CostModels,
+		CostModelsRaw:                    ogmiosParams.CostModels,
 	}
 }
 

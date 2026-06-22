@@ -134,8 +134,8 @@ func (mcc *MaestroChainContext) LatestEpochParams() (Base.ProtocolParameters, er
 		return protocolParams, err
 	}
 	// Map ALL the fields
-	protocolParams.MinFeeConstant = int(ppFromApi.Data.MinFeeConstant.LovelaceAmount.Lovelace)
-	protocolParams.MinFeeCoefficient = int(ppFromApi.Data.MinFeeCoefficient)
+	protocolParams.MinFeeConstant = int64(ppFromApi.Data.MinFeeConstant.LovelaceAmount.Lovelace)
+	protocolParams.MinFeeCoefficient = int64(ppFromApi.Data.MinFeeCoefficient)
 	protocolParams.MaxTxSize = int(ppFromApi.Data.MaxTransactionSize.Bytes)
 	protocolParams.MaxBlockSize = int(ppFromApi.Data.MaxBlockBodySize.Bytes)
 	protocolParams.MaxBlockHeaderSize = int(ppFromApi.Data.MaxBlockHeaderSize.Bytes)
