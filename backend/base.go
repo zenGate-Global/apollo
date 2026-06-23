@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math"
+	"math/big"
 	"strconv"
 	"strings"
 
@@ -142,6 +143,13 @@ func (p ProtocolParameters) RefScriptMultiplier() float64 {
 //
 // with the first-tier price = baseFeePerByte. A zero base price yields a zero
 // fee (pre-Conway / provider that does not charge for reference scripts).
+//
+// The accumulation uses exact rational arithmetic and floors once at the end,
+// matching the ledger (which accumulates a Rational and applies floor). Using
+// float64 here would let the repeated multiplier product (1.2 is not exactly
+// representable in binary floating point) drift across an integer boundary on
+// multi-tier reference scripts, producing a fee 1 lovelace below the ledger
+// minimum and a FeeTooSmall rejection.
 func TierRefScriptFee(totalRefScriptSize int, baseFeePerByte float64, sizeIncrement int, multiplier float64) int64 {
 	if totalRefScriptSize <= 0 || baseFeePerByte <= 0 {
 		return 0
@@ -152,16 +160,29 @@ func TierRefScriptFee(totalRefScriptSize int, baseFeePerByte float64, sizeIncrem
 	if multiplier <= 0 {
 		multiplier = DefaultRefScriptMultiplier
 	}
-	acc := 0.0
-	curTierPrice := baseFeePerByte
+	// Exact rationals. baseFeePerByte is an integer lovelace/byte in practice
+	// (15 at current params); the multiplier is the ledger constant 6/5. Recover
+	// it exactly from the float (1.2 -> 1200/1000 -> 6/5) so there is no drift.
+	base := new(big.Rat).SetFloat64(baseFeePerByte)
+	if base == nil { // NaN/Inf guard
+		return 0
+	}
+	m := big.NewRat(int64(math.Round(multiplier*1000)), 1000)
+	acc := new(big.Rat)
+	price := new(big.Rat).Set(base)
+	incr := new(big.Rat).SetInt64(int64(sizeIncrement))
 	n := totalRefScriptSize
 	for n >= sizeIncrement {
-		acc += float64(sizeIncrement) * curTierPrice
-		curTierPrice *= multiplier
+		acc.Add(acc, new(big.Rat).Mul(incr, price))
+		price.Mul(price, m)
 		n -= sizeIncrement
 	}
-	acc += float64(n) * curTierPrice
-	return int64(math.Floor(acc))
+	if n > 0 {
+		acc.Add(acc, new(big.Rat).Mul(new(big.Rat).SetInt64(int64(n)), price))
+	}
+	// floor(acc): acc is non-negative, so integer division of num/denom truncates
+	// toward zero, i.e. floors.
+	return new(big.Int).Quo(acc.Num(), acc.Denom()).Int64()
 }
 
 // CoinsPerUtxoByteValue returns the coins per UTxO byte value parsed from the string field.
