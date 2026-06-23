@@ -85,6 +85,83 @@ type ProtocolParameters struct {
 	MinFeeReferenceScriptsRange      int                `json:"min_fee_reference_scripts_range"`
 	MinFeeReferenceScriptsBase       int                `json:"min_fee_reference_scripts_base"`
 	MinFeeReferenceScriptsMultiplier int                `json:"min_fee_reference_scripts_multiplier"`
+	// MinFeeRefScriptCostPerByte is the BlockFrost/ledger flat name for the
+	// reference-script base price (lovelace per byte for the first tier). Some
+	// providers (e.g. BlockFrost) expose only this field and not the structured
+	// MinFeeReferenceScripts{Base,Range,Multiplier} triple. RefScriptFeePerByte()
+	// reconciles the two representations.
+	MinFeeRefScriptCostPerByte float64 `json:"min_fee_ref_script_cost_per_byte"`
+}
+
+// Conway reference-script fee tier constants. The ledger prices reference
+// scripts on a growing tier: the first SizeIncrement bytes cost the base
+// price per byte, and each subsequent tier of SizeIncrement bytes is priced
+// at the previous tier's price multiplied by Multiplier. These two values are
+// ledger constants (not surfaced by every provider), so they are defaulted
+// when a provider does not supply them.
+const (
+	DefaultRefScriptSizeIncrement = 25600
+	DefaultRefScriptMultiplier    = 1.2
+)
+
+// RefScriptFeePerByte returns the base reference-script price (lovelace per
+// byte for the first tier), preferring the structured MinFeeReferenceScriptsBase
+// when present and falling back to the flat MinFeeRefScriptCostPerByte.
+func (p ProtocolParameters) RefScriptFeePerByte() float64 {
+	if p.MinFeeReferenceScriptsBase > 0 {
+		return float64(p.MinFeeReferenceScriptsBase)
+	}
+	return p.MinFeeRefScriptCostPerByte
+}
+
+// RefScriptSizeIncrement returns the per-tier size increment, defaulting to the
+// Conway ledger constant when a provider does not supply it.
+func (p ProtocolParameters) RefScriptSizeIncrement() int {
+	if p.MinFeeReferenceScriptsRange > 0 {
+		return p.MinFeeReferenceScriptsRange
+	}
+	return DefaultRefScriptSizeIncrement
+}
+
+// RefScriptMultiplier returns the per-tier price multiplier, defaulting to the
+// Conway ledger constant when a provider does not supply it.
+func (p ProtocolParameters) RefScriptMultiplier() float64 {
+	if p.MinFeeReferenceScriptsMultiplier > 0 {
+		return float64(p.MinFeeReferenceScriptsMultiplier)
+	}
+	return DefaultRefScriptMultiplier
+}
+
+// TierRefScriptFee computes the Conway tiered reference-script fee for a total
+// reference-script byte size, matching the ledger's tierRefScriptFee function:
+//
+//	go acc curTierPrice n
+//	  | n < sizeIncrement = floor(acc + n*curTierPrice)
+//	  | otherwise         = go (acc + sizeIncrement*curTierPrice)
+//	                           (curTierPrice*multiplier) (n - sizeIncrement)
+//
+// with the first-tier price = baseFeePerByte. A zero base price yields a zero
+// fee (pre-Conway / provider that does not charge for reference scripts).
+func TierRefScriptFee(totalRefScriptSize int, baseFeePerByte float64, sizeIncrement int, multiplier float64) int64 {
+	if totalRefScriptSize <= 0 || baseFeePerByte <= 0 {
+		return 0
+	}
+	if sizeIncrement <= 0 {
+		sizeIncrement = DefaultRefScriptSizeIncrement
+	}
+	if multiplier <= 0 {
+		multiplier = DefaultRefScriptMultiplier
+	}
+	acc := 0.0
+	curTierPrice := baseFeePerByte
+	n := totalRefScriptSize
+	for n >= sizeIncrement {
+		acc += float64(sizeIncrement) * curTierPrice
+		curTierPrice *= multiplier
+		n -= sizeIncrement
+	}
+	acc += float64(n) * curTierPrice
+	return int64(math.Floor(acc))
 }
 
 // CoinsPerUtxoByteValue returns the coins per UTxO byte value parsed from the string field.

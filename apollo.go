@@ -1380,6 +1380,16 @@ func (a *Apollo) Complete() (*Apollo, error) {
 		}
 	}
 
+	// Recompute total collateral and the collateral return from the FINAL fee.
+	// setCollateral() runs before execution units and the reference-script fee
+	// are known, so it can only size collateral from a preliminary (max-by-size)
+	// fee. The ledger requires total collateral >= ceil(fee * collateralPercent
+	// / 100) against the ACTUAL fee, so a stale preliminary value triggers
+	// InsufficientCollateral. Resize here now that the fee is final.
+	if err := a.finalizeCollateral(fee); err != nil {
+		return a, err
+	}
+
 	// Build transaction body
 	body, err := a.buildBody(allInputUtxos, outputs, uint64(fee))
 	if err != nil {
@@ -1592,8 +1602,18 @@ func (a *Apollo) estimateFee(inputs []common.Utxo, outputs []babbage.BabbageTran
 		return 0, err
 	}
 
-	// Build a dummy transaction to estimate size
-	body, err := a.buildBody(inputs, outputs, 0)
+	// Build a dummy transaction to estimate size. The fee field (body key 2) is
+	// `omitempty`, so a zero fee is dropped entirely and a non-trivial fee is
+	// encoded as a multi-byte integer. Sizing against a zero fee therefore
+	// undercounts the body by the width of the real fee field (up to ~5 bytes),
+	// producing a fee that is a few hundred lovelace short and a FeeTooSmallUTxO
+	// rejection. Use a placeholder fee whose CBOR width matches (or exceeds) the
+	// final fee so the size — and thus the fee — is not underestimated.
+	placeholderFee, feeErr := a.Context.MaxTxFee()
+	if feeErr != nil || placeholderFee == 0 {
+		placeholderFee = 2_000_000
+	}
+	body, err := a.buildBody(inputs, outputs, placeholderFee)
 	if err != nil {
 		return 0, err
 	}
@@ -1653,15 +1673,102 @@ func (a *Apollo) estimateFee(inputs []common.Utxo, outputs []babbage.BabbageTran
 		fee += int64(exUnitFeeFloat)
 	}
 
+	// Add the Conway tiered reference-script fee. Scripts supplied via reference
+	// inputs (rather than attached to the witness set) are priced per byte on a
+	// growing tier. The ledger includes this in minfee, so omitting it produces
+	// FeeTooSmallUTxO. This only applies to script transactions: a tx with no
+	// redeemers/scripts executes nothing, so its reference inputs (which may be
+	// used purely to read datums) contribute no reference-script fee and need
+	// not be resolved.
+	refScriptSize := 0
+	if a.hasScripts() {
+		refScriptSize, err = a.totalReferenceScriptSize(inputs)
+		if err != nil {
+			return 0, err
+		}
+	}
+	if refScriptSize > 0 {
+		fee += backend.TierRefScriptFee(
+			refScriptSize,
+			pp.RefScriptFeePerByte(),
+			pp.RefScriptSizeIncrement(),
+			pp.RefScriptMultiplier(),
+		)
+	}
+
 	return fee, nil
+}
+
+// totalReferenceScriptSize resolves the combined byte size of all Plutus
+// reference scripts that the ledger prices into the reference-script fee.
+// The ledger counts the size of every script attached (via script_ref) to the
+// outputs of the transaction's reference inputs AND its spending inputs, so we
+// resolve both. A reference input that fails to resolve is a hard error: an
+// undercounted size silently underprices the fee and gets the tx rejected.
+func (a *Apollo) totalReferenceScriptSize(inputs []common.Utxo) (int, error) {
+	seen := make(map[string]struct{})
+	total := 0
+
+	addScript := func(script common.Script) {
+		if script == nil {
+			return
+		}
+		switch script.(type) {
+		case common.PlutusV1Script, *common.PlutusV1Script,
+			common.PlutusV2Script, *common.PlutusV2Script,
+			common.PlutusV3Script, *common.PlutusV3Script:
+			total += len(script.RawScriptBytes())
+		}
+	}
+
+	// Spending inputs already resolved by the caller carry their outputs.
+	for _, utxo := range inputs {
+		ref := utxoRef(utxo)
+		if _, ok := seen[ref]; ok {
+			continue
+		}
+		seen[ref] = struct{}{}
+		addScript(utxo.Output.ScriptRef())
+	}
+
+	// Reference inputs must be resolved against the chain context.
+	for _, refInput := range a.referenceInputs {
+		ref := hex.EncodeToString(refInput.TxId.Bytes()) + "#" + strconv.Itoa(int(refInput.OutputIndex))
+		if _, ok := seen[ref]; ok {
+			continue
+		}
+		seen[ref] = struct{}{}
+		utxo, err := a.Context.UtxoByRef(refInput.TxId, refInput.OutputIndex)
+		if err != nil {
+			return 0, fmt.Errorf(
+				"failed to resolve reference input %s for reference-script fee: %w",
+				ref, err,
+			)
+		}
+		if utxo == nil {
+			return 0, fmt.Errorf("reference input %s not found for reference-script fee", ref)
+		}
+		addScript(utxo.Output.ScriptRef())
+	}
+
+	return total, nil
 }
 
 // estimateExecutionUnits builds a preliminary transaction and evaluates it
 // against the chain to get actual execution units for script redeemers.
 // The returned ExUnits include a buffer for safety.
 func (a *Apollo) estimateExecutionUnits(inputs []common.Utxo, outputs []babbage.BabbageTransactionOutput) error {
-	// Build preliminary tx with current (possibly zero) ExUnits
-	body, err := a.buildBody(inputs, outputs, 0)
+	// Build preliminary tx with current (possibly zero) ExUnits. The fee field
+	// is `omitempty`, so a zero fee is dropped from the CBOR and the body has no
+	// fee (key 2). Strict evaluators (Ogmios, and Blockfrost which proxies it)
+	// reject such a body with "field fee with key 2, not decoded". Use a
+	// non-zero placeholder fee so the field is always present; its value does
+	// not affect script evaluation.
+	placeholderFee, feeErr := a.Context.MaxTxFee()
+	if feeErr != nil || placeholderFee == 0 {
+		placeholderFee = 2_000_000
+	}
+	body, err := a.buildBody(inputs, outputs, placeholderFee)
 	if err != nil {
 		return fmt.Errorf("failed to build preliminary tx body: %w", err)
 	}
@@ -2383,6 +2490,84 @@ func (a *Apollo) setCollateral() error {
 		return nil
 	}
 	return errors.New("script transaction requires collateral, but no eligible collateral UTxO was found")
+}
+
+// finalizeCollateral recomputes the total collateral and the collateral-return
+// output from the final transaction fee. The ledger requires
+//
+//	totalCollateral >= ceil(fee * collateralPercent / 100)
+//
+// computed against the ACTUAL fee. setCollateral() only had a preliminary
+// (max-by-size) fee available, so its sizing is stale once execution units and
+// the reference-script fee are known. We keep the collateral UTxO it selected
+// (so coin selection still excluded it) and only resize the total/return here.
+//
+// If the user pinned an explicit collateral amount (collateralAmount) or set
+// the collateral inputs manually, the early sizing is intentional and left
+// untouched.
+func (a *Apollo) finalizeCollateral(fee int64) error {
+	if len(a.collaterals) == 0 || a.collateralAmount > 0 {
+		return nil
+	}
+	pp, err := a.Context.ProtocolParams()
+	if err != nil {
+		return fmt.Errorf("failed to get protocol params for collateral sizing: %w", err)
+	}
+	if pp.CollateralPercent <= 0 || fee <= 0 {
+		return nil
+	}
+	if fee > (math.MaxInt64-99)/int64(pp.CollateralPercent) {
+		return fmt.Errorf("collateral sizing overflows: fee=%d collateralPercent=%d", fee, pp.CollateralPercent)
+	}
+	// Ceil division: ceil(fee * percent / 100).
+	required := (fee*int64(pp.CollateralPercent) + 99) / 100
+	if required <= 0 {
+		return nil
+	}
+
+	// Sum the lovelace and assets across the selected collateral inputs so the
+	// collateral return can carry the remainder (and any tokens) forward.
+	var totalLovelace int64
+	var collateralAssets *common.MultiAsset[common.MultiAssetTypeOutput]
+	for _, utxo := range a.collaterals {
+		amt := utxo.Output.Amount()
+		if amt == nil || !amt.IsInt64() {
+			return fmt.Errorf("collateral UTxO %s has an invalid lovelace amount", utxoRef(utxo))
+		}
+		sum := totalLovelace + amt.Int64()
+		if sum < totalLovelace {
+			return errors.New("collateral lovelace total overflows int64")
+		}
+		totalLovelace = sum
+		if assets := utxo.Output.Assets(); assets != nil {
+			if collateralAssets == nil {
+				collateralAssets = CloneMultiAsset(assets)
+			} else {
+				collateralAssets.Add(assets)
+			}
+		}
+	}
+
+	if required > totalLovelace {
+		return fmt.Errorf(
+			"insufficient collateral: need %d lovelace (ceil(fee %d * %d%%)), selected collateral holds %d",
+			required, fee, pp.CollateralPercent, totalLovelace,
+		)
+	}
+
+	a.totalCollateral = required
+	remainder := totalLovelace - required
+	if remainder > 0 || collateralAssets != nil {
+		returnVal := Value{Coin: uint64(remainder)} //nolint:gosec // remainder >= 0
+		if collateralAssets != nil {
+			returnVal.Assets = collateralAssets
+		}
+		ret := NewBabbageOutput(a.getChangeAddress(), returnVal, nil, nil)
+		a.collateralReturn = &ret
+	} else {
+		a.collateralReturn = nil
+	}
+	return nil
 }
 
 func (a *Apollo) validateCollateralDistinctFromInputs(inputs []common.Utxo) error {
