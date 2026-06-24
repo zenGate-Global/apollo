@@ -1673,24 +1673,27 @@ func (a *Apollo) estimateFee(inputs []common.Utxo, outputs []babbage.BabbageTran
 		fee += int64(exUnitFeeFloat)
 	}
 
-	// Add the Conway tiered reference-script fee. Scripts supplied via reference
-	// inputs (rather than attached to the witness set) are priced per byte on a
-	// growing tier. The ledger includes this in minfee, so omitting it produces
-	// FeeTooSmallUTxO. This only applies to script transactions: a tx with no
-	// redeemers/scripts executes nothing, so its reference inputs (which may be
-	// used purely to read datums) contribute no reference-script fee and need
-	// not be resolved.
-	refScriptSize := 0
-	if a.hasScripts() {
-		refScriptSize, err = a.totalReferenceScriptSize(inputs)
-		if err != nil {
-			return 0, err
-		}
+	// Add the Conway tiered reference-script fee. Reference scripts (native and
+	// Plutus, carried by spending inputs or supplied via reference inputs) are
+	// priced per byte on a growing tier, and the ledger includes this in minfee,
+	// so omitting it produces FeeTooSmallUTxO. Compute it over the resolved input
+	// union; totalReferenceScriptSize returns 0 when no reference scripts are
+	// present, so transactions that use none are unaffected.
+	refScriptSize, err := a.totalReferenceScriptSize(inputs)
+	if err != nil {
+		return 0, err
 	}
 	if refScriptSize > 0 {
+		refFeePerByte := pp.RefScriptFeePerByte()
+		if refFeePerByte <= 0 {
+			return 0, fmt.Errorf(
+				"transaction references %d bytes of scripts but the protocol parameters carry no reference-script price; cannot compute the reference-script fee",
+				refScriptSize,
+			)
+		}
 		fee += backend.TierRefScriptFee(
 			refScriptSize,
-			pp.RefScriptFeePerByte(),
+			refFeePerByte,
 			pp.RefScriptSizeIncrement(),
 			pp.RefScriptMultiplier(),
 		)
@@ -1699,8 +1702,8 @@ func (a *Apollo) estimateFee(inputs []common.Utxo, outputs []babbage.BabbageTran
 	return fee, nil
 }
 
-// totalReferenceScriptSize resolves the combined byte size of all Plutus
-// reference scripts that the ledger prices into the reference-script fee.
+// totalReferenceScriptSize resolves the combined byte size of all reference
+// scripts (native and Plutus) that the ledger prices into the reference-script fee.
 // The ledger counts the size of every script attached (via script_ref) to the
 // outputs of the transaction's reference inputs AND its spending inputs, so we
 // resolve both. A reference input that fails to resolve is a hard error: an
@@ -1713,12 +1716,9 @@ func (a *Apollo) totalReferenceScriptSize(inputs []common.Utxo) (int, error) {
 		if script == nil {
 			return
 		}
-		switch script.(type) {
-		case common.PlutusV1Script, *common.PlutusV1Script,
-			common.PlutusV2Script, *common.PlutusV2Script,
-			common.PlutusV3Script, *common.PlutusV3Script:
-			total += len(script.RawScriptBytes())
-		}
+		// The ledger prices every reference script (native and Plutus) by its
+		// raw byte size, so do not filter by language here.
+		total += len(script.RawScriptBytes())
 	}
 
 	// Spending inputs already resolved by the caller carry their outputs.
