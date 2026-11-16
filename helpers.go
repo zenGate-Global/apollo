@@ -511,14 +511,18 @@ func ComputeScriptDataHash(
 		return nil, fmt.Errorf("failed to encode redeemers: %w", err)
 	}
 
+	// Datums contribute to the hash only when present. The Cardano ledger
+	// (Conway UtxoValidateScriptDataHash) appends the datum CBOR to the hash
+	// input only if the witness set carries datums; when there are none it
+	// appends nothing. Encoding an empty array (0x80) here would shift every
+	// hash by one byte and produce a ScriptIntegrityHashMismatch for any
+	// datum-less script transaction (e.g. reward-withdrawal redeemers).
 	var datumBytes []byte
 	if len(datums) > 0 {
 		datumBytes, err = cbor.Encode(datums)
-	} else {
-		datumBytes, err = cbor.Encode([]common.Datum{})
-	}
-	if err != nil {
-		return nil, fmt.Errorf("failed to encode datums: %w", err)
+		if err != nil {
+			return nil, fmt.Errorf("failed to encode datums: %w", err)
+		}
 	}
 
 	// Encode cost models as language views using gouroboros, which
