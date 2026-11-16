@@ -1292,43 +1292,46 @@ func (a *Apollo) Complete() (*Apollo, error) {
 	changeAddr := a.getChangeAddress()
 
 	// buildOutputsWithChange computes the output set (base outputs plus a
-	// change output if needed) for the given fee.
-	buildOutputsWithChange := func(fee int64) ([]babbage.BabbageTransactionOutput, error) {
+	// change output if needed) for the given fee. It also returns the ADA-only
+	// change that was too small for its own output; the caller must add it to
+	// the fee, otherwise the transaction does not conserve value.
+	buildOutputsWithChange := func(fee int64) ([]babbage.BabbageTransactionOutput, int64, error) {
 		outputs := make([]babbage.BabbageTransactionOutput, len(baseOutputs))
 		copy(outputs, baseOutputs)
 
 		// Calculate change: totalRequired includes deposits, totalInput includes refunds.
 		if fee < 0 {
-			return nil, fmt.Errorf("negative fee: %d", fee)
+			return nil, 0, fmt.Errorf("negative fee: %d", fee)
 		}
 		feeValue := NewSimpleValue(uint64(fee)) //nolint:gosec // validated non-negative above
 		totalNeeded, err := totalRequired.Add(feeValue)
 		if err != nil {
-			return nil, fmt.Errorf("required value overflow: %w", err)
+			return nil, 0, fmt.Errorf("required value overflow: %w", err)
 		}
 		changeValue, err := totalInput.Sub(totalNeeded)
 		if err != nil {
-			return nil, fmt.Errorf("insufficient funds: %w", err)
+			return nil, 0, fmt.Errorf("insufficient funds: %w", err)
 		}
 		// Reject burns not covered by inputs and prune zero quantities,
 		// which are invalid in Conway-era output values.
 		changeValue.Assets, err = normalizeChangeAssets(changeValue.Assets)
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 
+		var absorbed int64
 		if changeValue.Coin > 0 || changeValue.HasAssets() {
 			changeOutput := NewBabbageOutput(changeAddr, changeValue, nil, nil)
 			pp, err := a.Context.ProtocolParams()
 			if err != nil {
-				return nil, fmt.Errorf("failed to get protocol params for change output: %w", err)
+				return nil, 0, fmt.Errorf("failed to get protocol params for change output: %w", err)
 			}
 			minChange, err := MinLovelacePostAlonzo(&changeOutput, pp.CoinsPerUtxoByteValue())
 			if err != nil {
-				return nil, fmt.Errorf("failed to compute min UTxO for change output: %w", err)
+				return nil, 0, fmt.Errorf("failed to compute min UTxO for change output: %w", err)
 			}
 			if minChange < 0 {
-				return nil, fmt.Errorf("invalid min UTxO for change output: %d", minChange)
+				return nil, 0, fmt.Errorf("invalid min UTxO for change output: %d", minChange)
 			}
 			if changeValue.Coin >= uint64(minChange) {
 				outputs = append(outputs, changeOutput)
@@ -1340,7 +1343,7 @@ func (a *Apollo) Complete() (*Apollo, error) {
 				changeOutput = NewBabbageOutput(changeAddr, changeValue, nil, nil)
 				actualMin, err := MinLovelacePostAlonzo(&changeOutput, pp.CoinsPerUtxoByteValue())
 				if err != nil {
-					return nil, fmt.Errorf("failed to compute actual min UTxO for change output: %w", err)
+					return nil, 0, fmt.Errorf("failed to compute actual min UTxO for change output: %w", err)
 				}
 				if actualMin > minChange {
 					// minChange validated non-negative above, actualMin > minChange
@@ -1362,20 +1365,26 @@ func (a *Apollo) Complete() (*Apollo, error) {
 				}
 				totalOutputCoin += governanceRequired.Coin
 				if totalOutputCoin > totalInputCoin {
-					return nil, fmt.Errorf("insufficient funds: need %d more lovelace for change output min UTxO", totalOutputCoin-totalInputCoin)
+					return nil, 0, fmt.Errorf("insufficient funds: need %d more lovelace for change output min UTxO", totalOutputCoin-totalInputCoin)
 				}
 				_ = shortfall // verified via balance check above
 				outputs = append(outputs, changeOutput)
+			} else {
+				// Change is ADA-only but below min UTxO: it is too small to
+				// create an output, so it is charged as additional fee.
+				absorbed = int64(changeValue.Coin) //nolint:gosec // below minChange, which fits int64
 			}
-			// If change is ADA-only but below min UTxO and has no assets,
-			// it is too small to create an output -- absorbed as additional fee.
 		}
-		return outputs, nil
+		return outputs, absorbed, nil
 	}
 
+	// absorbedChange is the sub-min-UTxO change from the latest output build.
+	// fee stays the size-based estimate that drives convergence; the fee
+	// actually charged is fee + absorbedChange.
+	var absorbedChange int64
 	converged := false
 	for range maxFeeIterations {
-		outputs, err = buildOutputsWithChange(fee)
+		outputs, absorbedChange, err = buildOutputsWithChange(fee)
 		if err != nil {
 			return a, err
 		}
@@ -1390,7 +1399,7 @@ func (a *Apollo) Complete() (*Apollo, error) {
 		// the fee accounts for the final collateral total/return footprint in
 		// the body. A collateral_return that only materializes after sizing
 		// would otherwise grow the tx past the frozen estimate.
-		if err := a.finalizeCollateral(fee); err != nil {
+		if err := a.finalizeCollateral(fee + absorbedChange); err != nil {
 			return a, err
 		}
 		newFee, err := a.estimateFee(allInputUtxos, outputs)
@@ -1412,11 +1421,12 @@ func (a *Apollo) Complete() (*Apollo, error) {
 		// The final iteration raised the fee after outputs were computed;
 		// rebuild the change output against the final fee so the transaction
 		// still conserves value.
-		outputs, err = buildOutputsWithChange(fee)
+		outputs, absorbedChange, err = buildOutputsWithChange(fee)
 		if err != nil {
 			return a, err
 		}
 	}
+	fee += absorbedChange
 
 	// Recompute total collateral and the collateral return from the FINAL fee.
 	// setCollateral() runs before coin selection and fee estimation, so it can
